@@ -74,6 +74,38 @@ class Request<T> {
       decoder: decoder,
     );
   }
+
+  Request<T> copyWith({
+    Uri? url,
+    String? method,
+    Map<String, String>? headers,
+    Stream<List<int>>? bodyBytes,
+    bool? followRedirects,
+    int? maxRedirects,
+    int? contentLength,
+    FormData? files,
+    bool? persistentConnection,
+    Decoder<T>? decoder,
+    bool appendHeader = true,
+  }) {
+    // If appendHeader is set to true, we will merge origin headers with that
+    if (appendHeader && headers != null) {
+      headers.addAll(this.headers);
+    }
+
+    return Request<T>._(
+      url: url ?? this.url,
+      method: method ?? this.method,
+      bodyBytes: bodyBytes ?? this.bodyBytes,
+      headers: headers == null ? this.headers : Map.from(headers),
+      followRedirects: followRedirects ?? this.followRedirects,
+      maxRedirects: maxRedirects ?? this.maxRedirects,
+      contentLength: contentLength ?? this.contentLength,
+      files: files ?? this.files,
+      persistentConnection: persistentConnection ?? this.persistentConnection,
+      decoder: decoder ?? this.decoder,
+    );
+  }
 }
 
 extension BodyBytesStream on Stream<List<int>> {

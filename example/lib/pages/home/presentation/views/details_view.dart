@@ -3,12 +3,14 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import '../../domain/entity/cases_model.dart';
+import '../controllers/home_controller.dart';
 
-class DetailsView extends StatelessWidget {
+class DetailsView extends GetView<HomeController> {
+  const DetailsView({Key? key}) : super(key: key);
   @override
   Widget build(BuildContext context) {
-    final country = Get.arguments as Country;
+    final parameter = context.params; //Get.parameters;
+    final country = controller.getCountryById(parameter['id'] ?? '');
     return Container(
       decoration: BoxDecoration(
         image: DecorationImage(
@@ -76,6 +78,11 @@ class DetailsView extends StatelessWidget {
                   '${country.totalRecovered}',
                   style: TextStyle(fontSize: 35, fontWeight: FontWeight.bold),
                 ),
+                TextButton(
+                    onPressed: () {
+                      Get.back(result: 'djsoidjsoidj');
+                    },
+                    child: Text('back'))
               ],
             )),
           ),

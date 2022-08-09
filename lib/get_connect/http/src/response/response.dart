@@ -1,5 +1,6 @@
 import 'dart:collection';
 import 'dart:convert';
+
 import '../exceptions/exceptions.dart';
 import '../request/request.dart';
 import '../status/http_status.dart';
@@ -7,6 +8,16 @@ import '../status/http_status.dart';
 class GraphQLResponse<T> extends Response<T> {
   final List<GraphQLError>? graphQLErrors;
   GraphQLResponse({T? body, this.graphQLErrors}) : super(body: body);
+  GraphQLResponse.fromResponse(Response res)
+      : graphQLErrors = null,
+        super(
+            request: res.request,
+            statusCode: res.statusCode,
+            bodyBytes: res.bodyBytes,
+            bodyString: res.bodyString,
+            statusText: res.statusText,
+            headers: res.headers,
+            body: res.body['data'] as T?);
 }
 
 class Response<T> {
@@ -56,7 +67,7 @@ class Response<T> {
 
   /// The decoded body of this [Response]. You can access the
   /// body parameters as Map
-  /// Ex: body['title'];
+  /// Ex: `body['title'];`
   final T? body;
 }
 
@@ -67,7 +78,7 @@ Future<String> bodyBytesToString(
 
 /// Returns the encoding to use for a response with the given headers.
 ///
-/// Defaults to [latin1] if the headers don't specify a charset or if that
+/// Defaults to [utf8] if the headers don't specify a charset or if that
 /// charset is unknown.
 Encoding _encodingForHeaders(Map<String, String> headers) =>
     _encodingForCharset(_contentTypeForHeaders(headers).parameters!['charset']);
@@ -76,12 +87,12 @@ Encoding _encodingForHeaders(Map<String, String> headers) =>
 ///
 /// Returns [fallback] if [charset] is null or if no [Encoding] was found that
 /// corresponds to [charset].
-Encoding _encodingForCharset(String? charset, [Encoding fallback = latin1]) {
+Encoding _encodingForCharset(String? charset, [Encoding fallback = utf8]) {
   if (charset == null) return fallback;
   return Encoding.getByName(charset) ?? fallback;
 }
 
-/// Returns the [MediaType] object for the given headers's content-type.
+/// Returns the MediaType object for the given headers's content-type.
 ///
 /// Defaults to `application/octet-stream`.
 HeaderValue _contentTypeForHeaders(Map<String, String> headers) {
@@ -128,7 +139,11 @@ class HeaderValue {
     stringBuffer.write(_value);
     if (parameters != null && parameters!.isNotEmpty) {
       _parameters!.forEach((name, value) {
-        stringBuffer..write('; ')..write(name)..write('=')..write(value);
+        stringBuffer
+          ..write('; ')
+          ..write(name)
+          ..write('=')
+          ..write(value);
       });
     }
     return stringBuffer.toString();
@@ -192,7 +207,7 @@ class HeaderValue {
       }
 
       String? parseParameterValue() {
-        if (!done() && value[index] == '\"') {
+        if (!done() && value[index] == '"') {
           var stringBuffer = StringBuffer();
           index++;
           while (!done()) {
@@ -200,11 +215,11 @@ class HeaderValue {
               if (index + 1 == value.length) {
                 throw StateError('Failed to parse header value');
               }
-              if (preserveBackslash && value[index + 1] != '\"') {
+              if (preserveBackslash && value[index + 1] != '"') {
                 stringBuffer.write(value[index]);
               }
               index++;
-            } else if (value[index] == '\"') {
+            } else if (value[index] == '"') {
               index++;
               break;
             }

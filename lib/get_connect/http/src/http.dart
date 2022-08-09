@@ -8,9 +8,7 @@ import '../src/request/request.dart';
 import '../src/response/response.dart';
 import '../src/status/http_status.dart';
 import 'http/interface/request_base.dart';
-import 'http/stub/http_request_stub.dart'
-    if (dart.library.html) 'http/html/http_request_html.dart'
-    if (dart.library.io) 'http/io/http_request_io.dart';
+import 'http/request/http_request.dart';
 import 'interceptors/get_modifiers.dart';
 
 typedef Decoder<T> = T Function(dynamic data);
@@ -27,6 +25,9 @@ class GetHttpClient {
   int maxRedirects;
   int maxAuthRetries;
 
+  bool sendUserAgent;
+  bool sendContentLength;
+
   Decoder? defaultDecoder;
 
   Duration timeout;
@@ -37,18 +38,26 @@ class GetHttpClient {
 
   final GetModifier _modifier;
 
+  String Function(Uri url)? findProxy;
+
   GetHttpClient({
     this.userAgent = 'getx-client',
     this.timeout = const Duration(seconds: 8),
     this.followRedirects = true,
     this.maxRedirects = 5,
+    this.sendUserAgent = false,
+    this.sendContentLength = true,
     this.maxAuthRetries = 1,
     bool allowAutoSignedCert = false,
     this.baseUrl,
     List<TrustedCertificate>? trustedCertificates,
-  })  : _httpClient = HttpRequestImpl(
+    bool withCredentials = false,
+    String Function(Uri url)? findProxy,
+  })  : _httpClient = createHttp(
           allowAutoSignedCert: allowAutoSignedCert,
           trustedCertificates: trustedCertificates,
+          withCredentials: withCredentials,
+          findProxy: findProxy,
         ),
         _modifier = GetModifier();
 
@@ -96,11 +105,13 @@ class GetHttpClient {
     Stream<List<int>>? bodyStream;
     final headers = <String, String>{};
 
-    headers['user-agent'] = userAgent;
+    if (sendUserAgent) {
+      headers['user-agent'] = userAgent;
+    }
 
     if (body is FormData) {
       bodyBytes = await body.toBytes();
-      headers['content-length'] = bodyBytes.length.toString();
+      _setContentLenght(headers, bodyBytes.length);
       headers['content-type'] =
           'multipart/form-data; boundary=${body.boundary}';
     } else if (contentType != null &&
@@ -113,19 +124,21 @@ class GetHttpClient {
       });
       var formData = parts.join('&');
       bodyBytes = utf8.encode(formData);
+      _setContentLenght(headers, bodyBytes.length);
+      headers['content-type'] = contentType;
     } else if (body is Map || body is List) {
       var jsonString = json.encode(body);
-
       bodyBytes = utf8.encode(jsonString);
-      headers['content-length'] = bodyBytes.length.toString();
+      _setContentLenght(headers, bodyBytes.length);
       headers['content-type'] = contentType ?? defaultContentType;
     } else if (body is String) {
       bodyBytes = utf8.encode(body);
-      headers['content-length'] = bodyBytes.length.toString();
+      _setContentLenght(headers, bodyBytes.length);
+
       headers['content-type'] = contentType ?? defaultContentType;
     } else if (body == null) {
+      _setContentLenght(headers, 0);
       headers['content-type'] = contentType ?? defaultContentType;
-      headers['content-length'] = '0';
     } else {
       if (!errorSafety) {
         throw UnexpectedFormat('body cannot be ${body.runtimeType}');
@@ -147,6 +160,12 @@ class GetHttpClient {
       maxRedirects: maxRedirects,
       decoder: decoder,
     );
+  }
+
+  void _setContentLenght(Map<String, String> headers, int contentLength) {
+    if (sendContentLength) {
+      headers['content-length'] = '$contentLength';
+    }
   }
 
   Stream<List<int>> _trackProgress(
@@ -175,7 +194,9 @@ class GetHttpClient {
     String? contentType,
   ) {
     headers['content-type'] = contentType ?? defaultContentType;
-    headers['user-agent'] = userAgent;
+    if (sendUserAgent) {
+      headers['user-agent'] = userAgent;
+    }
   }
 
   Future<Response<T>> _performRequest<T>(
@@ -184,52 +205,54 @@ class GetHttpClient {
     int requestNumber = 1,
     Map<String, String>? headers,
   }) async {
+    var request = await handler();
+
+    headers?.forEach((key, value) {
+      request.headers[key] = value;
+    });
+
+    if (authenticate) await _modifier.authenticator!(request);
+    final newRequest = await _modifier.modifyRequest<T>(request);
+
+    _httpClient.timeout = timeout;
     try {
-      var request = await handler();
+      var response = await _httpClient.send<T>(newRequest);
 
-      headers?.forEach((key, value) {
-        request.headers[key] = value;
-      });
+      final newResponse =
+          await _modifier.modifyResponse<T>(newRequest, response);
 
-      if (authenticate) await _modifier.authenticator!(request);
-      await _modifier.modifyRequest(request);
-
-      var response = await _httpClient.send<T>(request);
-
-      await _modifier.modifyResponse(request, response);
-
-      if (HttpStatus.unauthorized == response.statusCode &&
+      if (HttpStatus.unauthorized == newResponse.statusCode &&
           _modifier.authenticator != null &&
           requestNumber <= maxAuthRetries) {
         return _performRequest<T>(
           handler,
           authenticate: true,
           requestNumber: requestNumber + 1,
-          headers: request.headers,
+          headers: newRequest.headers,
         );
-      } else if (HttpStatus.unauthorized == response.statusCode) {
+      } else if (HttpStatus.unauthorized == newResponse.statusCode) {
         if (!errorSafety) {
           throw UnauthorizedException();
         } else {
           return Response<T>(
-            request: request,
-            headers: response.headers,
-            statusCode: response.statusCode,
-            body: response.body,
-            bodyBytes: response.bodyBytes,
-            bodyString: response.bodyString,
-            statusText: response.statusText,
+            request: newRequest,
+            headers: newResponse.headers,
+            statusCode: newResponse.statusCode,
+            body: newResponse.body,
+            bodyBytes: newResponse.bodyBytes,
+            bodyString: newResponse.bodyString,
+            statusText: newResponse.statusText,
           );
         }
       }
 
-      return response;
+      return newResponse;
     } on Exception catch (err) {
       if (!errorSafety) {
         throw GetHttpException(err.toString());
       } else {
         return Response<T>(
-          request: null,
+          request: newRequest,
           headers: null,
           statusCode: null,
           body: null,
@@ -255,6 +278,8 @@ class GetHttpClient {
       headers: headers,
       decoder: decoder ?? (defaultDecoder as Decoder<T>?),
       contentLength: 0,
+      followRedirects: followRedirects,
+      maxRedirects: maxRedirects,
     ));
   }
 

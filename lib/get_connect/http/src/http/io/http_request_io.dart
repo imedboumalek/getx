@@ -16,6 +16,8 @@ class HttpRequestImpl extends HttpRequestBase {
   HttpRequestImpl({
     bool allowAutoSignedCert = true,
     List<TrustedCertificate>? trustedCertificates,
+    bool withCredentials = false,
+    String Function(Uri url)? findProxy,
   }) {
     _httpClient = io.HttpClient();
     if (trustedCertificates != null) {
@@ -28,22 +30,26 @@ class HttpRequestImpl extends HttpRequestBase {
 
     _httpClient = io.HttpClient(context: _securityContext);
     _httpClient!.badCertificateCallback = (_, __, ___) => allowAutoSignedCert;
+    _httpClient!.findProxy = findProxy;
   }
 
   @override
   Future<Response<T>> send<T>(Request<T> request) async {
     var stream = request.bodyBytes.asBroadcastStream();
-    //var stream = BodyBytesStream.fromBytes(requestBody ?? const []);
-
+    io.HttpClientRequest? ioRequest;
     try {
-      var ioRequest = (await _httpClient!.openUrl(request.method, request.url))
+      _httpClient!.connectionTimeout = timeout;
+      ioRequest = (await _httpClient!.openUrl(request.method, request.url))
         ..followRedirects = request.followRedirects
         ..persistentConnection = request.persistentConnection
         ..maxRedirects = request.maxRedirects
         ..contentLength = request.contentLength ?? -1;
       request.headers.forEach(ioRequest.headers.set);
 
-      var response = await stream.pipe(ioRequest) as io.HttpClientResponse;
+      var response = timeout == null
+          ? await stream.pipe(ioRequest) as io.HttpClientResponse
+          : await stream.pipe(ioRequest).timeout(timeout!)
+              as io.HttpClientResponse;
 
       var headers = <String, String>{};
       response.headers.forEach((key, values) {
@@ -68,6 +74,9 @@ class HttpRequestImpl extends HttpRequestBase {
         body: body,
         bodyString: stringBody,
       );
+    } on TimeoutException catch (_) {
+      ioRequest?.abort();
+      rethrow;
     } on io.HttpException catch (error) {
       throw GetHttpException(error.message, error.uri);
     }

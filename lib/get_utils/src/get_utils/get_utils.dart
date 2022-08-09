@@ -68,7 +68,7 @@ class GetUtils {
   /// "value":value==null?null:value; someVar.nil will force the null type
   /// if the var is null or undefined.
   /// `nil` taken from ObjC just to have a shorter sintax.
-  static dynamic nil(dynamic s) => s == null ? null : s;
+  static dynamic nil(dynamic s) => s;
 
   /// Checks if data is null or blank (empty or only contains whitespace).
   static bool? isNullOrBlank(dynamic value) {
@@ -270,7 +270,7 @@ class GetUtils {
   }
 
   /// Checks if all data have same value.
-  /// Example: 111111 -> true, wwwww -> true, [1,1,1,1] -> true
+  /// Example: 111111 -> true, wwwww -> true, 1,1,1,1 -> true
   static bool isOneAKind(dynamic value) {
     if ((value is String || value is List) && !isNullOrBlank(value)!) {
       final first = value[0];
@@ -331,13 +331,6 @@ class GetUtils {
     return length >= maxLength;
   }
 
-  /// Checks if length of data is LOWER than maxLength.
-  ///
-  /// This method is deprecated, use [isLengthLessThan] instead
-  @deprecated
-  static bool isLengthLowerThan(dynamic value, int maxLength) =>
-      isLengthLessThan(value, maxLength);
-
   /// Checks if length of data is LESS than maxLength.
   static bool isLengthLessThan(dynamic value, int maxLength) {
     final length = _obtainDynamicLength(value);
@@ -347,13 +340,6 @@ class GetUtils {
 
     return length < maxLength;
   }
-
-  /// Checks if length of data is LOWER OR EQUAL to maxLength.
-  ///
-  /// This method is deprecated, use [isLengthLessOrEqual] instead
-  @deprecated
-  static bool isLengthLowerOrEqual(dynamic value, int maxLength) =>
-      isLengthLessOrEqual(value, maxLength);
 
   /// Checks if length of data is LESS OR EQUAL to maxLength.
   static bool isLengthLessOrEqual(dynamic value, int maxLength) {
@@ -550,6 +536,45 @@ class GetUtils {
 
     return newString[0].toLowerCase() + newString.substring(1);
   }
+
+  /// credits to "ReCase" package.
+  static final RegExp _upperAlphaRegex = RegExp(r'[A-Z]');
+  static final _symbolSet = {' ', '.', '/', '_', '\\', '-'};
+  static List<String> _groupIntoWords(String text) {
+    var sb = StringBuffer();
+    var words = <String>[];
+    var isAllCaps = text.toUpperCase() == text;
+
+    for (var i = 0; i < text.length; i++) {
+      var char = text[i];
+      var nextChar = i + 1 == text.length ? null : text[i + 1];
+      if (_symbolSet.contains(char)) {
+        continue;
+      }
+      sb.write(char);
+      var isEndOfWord = nextChar == null ||
+          (_upperAlphaRegex.hasMatch(nextChar) && !isAllCaps) ||
+          _symbolSet.contains(nextChar);
+      if (isEndOfWord) {
+        words.add('$sb');
+        sb.clear();
+      }
+    }
+    return words;
+  }
+
+  /// snake_case
+  static String? snakeCase(String? text, {String separator = '_'}) {
+    if (isNullOrBlank(text)!) {
+      return null;
+    }
+    return _groupIntoWords(text!)
+        .map((word) => word.toLowerCase())
+        .join(separator);
+  }
+
+  /// param-case
+  static String? paramCase(String? text) => snakeCase(text, separator: '-');
 
   /// Extract numeric value of string
   /// Example: OTP 12312 27/04/2020 => 1231227042020ß
